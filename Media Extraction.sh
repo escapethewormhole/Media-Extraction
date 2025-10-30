@@ -238,15 +238,7 @@ apply_special_cases(){
       printf '%s' "$replacement"; return 0
     fi
   done < <(load_special_cases)
-  case "$normalized" in
-    *"the office uk"*|*"uk the office"*|*"the office (uk)"*) printf '%s' "The Office (2001)";;
-    *"the office us"*|*"the office (us)"*|*"the office"*)   printf '%s' "The Office (2005)";;
-    *"band of brothers"*)                                   printf '%s' "Band of Brothers";;
-    *"the pacific"*|*"pacific pack"*|*"the pacific pack"*|*"pacific pt"*) printf '%s' "The Pacific";;
-    *"planet earth iii"*)                                    printf '%s' "Planet Earth III";;
-    *"breaking bad"*)                                        printf '%s' "Breaking Bad";;
-    *)                                                       printf '%s' "$raw";;
-  esac
+  printf '%s' "$raw"
 }
 
 make_query_hint(){
@@ -389,12 +381,6 @@ filebot_sort(){
     fi
   fi
 
-  # Known miniseries path heuristic: force TV if path contains known series names
-  if [[ "$tv_detected" == "false" ]]; then
-    if printf '%s' "$src" | awk '{print tolower($0)}' | grep -Eq 'the[._ ]pacific|band[._ ]of[._ ]brothers'; then
-      tv_detected="true"; log "Path heuristic: known miniseries name detected → treating as TV show"
-    fi
-  fi
 
   # Process as TV show
   if [[ "$tv_detected" == "true" ]]; then
@@ -465,9 +451,9 @@ main(){
 # Lines starting with # are comments
 #
 # Examples:
-# the office uk|The Office (2001)
-# the office us|The Office (2005)
-# band of brothers|Band of Brothers
+# sample keyword|Desired Title (2010)
+# uk version|Show Name (2001)
+# us version|Show Name (2005)
 EOF
     log "Created special cases config: $SPECIAL_CASES_FILE"
   fi
