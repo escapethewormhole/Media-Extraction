@@ -107,7 +107,8 @@ How It Detects TV vs Movies
 ## Optional Cleanup
 
 To automatically remove extracted temp folders after successful processing:
-```bash
+```
+bash
 CLEANUP_EXTRACTS=1 bash media-extraction.sh "/path/to/downloads"
 ```
 Integration (qBittorrent Example)
