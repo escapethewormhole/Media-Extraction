@@ -29,12 +29,14 @@ Designed to be **idempotent**, **macOS-safe**, and **resilient** — with retrie
 | **unar** *(optional)* | Fallback extractor on macOS |
 
 macOS:
-```bash
+```
+bash
 brew install sevenzip unar
 ```
 
 Linux:
-```bash
+```
+bash
 sudo apt install p7zip-full unar
 ```
 Install Filebot from the official website or package
