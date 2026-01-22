@@ -1,191 +1,90 @@
-# Media Extraction + FileBot Sorter (macOS/Linux)
+Extract + FileBot Sorter (macOS-safe Bash)
 
-Automates extraction of multi-part archives (RAR/7z/ZIP) and sorts them into a clean Plex/Emby/Jellyfin‑ready library using **FileBot**.  
-Designed to be **idempotent**, **macOS‑safe**, and **resilient** — with retries, fallbacks, and optional cleanup.
+Automates the post-processing of downloaded media by extracting archives into a temporary staging folder and sorting Movies/TV into a clean, Plex/Emby/Jellyfin-ready library using FileBot.
 
----
+Safe for seeding workflows: The original download folder and files are never modified. Only the generated .extract_tmp directory is moved into your library, ensuring your torrent client remains undisturbed.
 
-## Features
+Scripts
 
-- Extracts single & multi‑part archives (`.rar`, `.part1.rar`, `.r00`, `.7z`, `.7z.001`, `.zip`, `.z01`, etc.)
-- Smart TV vs Movie detection (episode markers, parts, mini‑series heuristics)
-- Uses **FileBot** for renaming/sorting:
-  - **TV:** `TV Shows/{n} ({y})/Season {s}/{n} - S{s}E{e} - {t}`
-  - **Movies:** `Movies/{n} ({y})/{n} ({y})`
-- **Copy‑only** import (`--action copy`) — keeps seeding archives untouched
-- Idempotent (no re‑processing unless archives change)
-- Retries on extraction or lookup failures
-- Optional cleanup of `.extract_tmp` folders after success
-- Supports custom title mappings for tricky series
+Media Extraction.sh
 
----
+The main pipeline.
 
-## Requirements
+Extraction: Scans for .rar, .7z, or .zip and extracts them to <release>/.extract_tmp.
 
-| Dependency | Description |
-|-----------|-------------|
-| **7‑Zip** (`7zz` preferred) | Archive extractor |
-| **FileBot CLI** | Renaming and metadata |
-| **unar** *(optional)* | Fallback extractor on macOS |
+Intelligence: Detects TV vs. Movie using advanced filename heuristics and "miniseries" detection.
 
-### macOS
-```bash
-brew install sevenzip unar
-```
+Sorting: Renames and moves files using FileBot (TheMovieDB / TheMovieDB::TV).
 
-### Linux
-```bash
-sudo apt install p7zip-full unar
-```
+Clean-up: Automatically deletes the temp folder after successful sorting and marks completion with .extract_done.
 
-Install **FileBot** from the official website or your package manager.
+qbittorrent_hook.sh
 
----
+A wrapper for qBittorrent’s “Run external program on torrent completion” feature. It targets the specific torrent path to avoid unnecessary scans and runs the main script in the background (nohup) so qBittorrent can continue its queue immediately.
 
-## Quick Start
+Key Features
 
-1. Make the script executable:
-   ```bash
-   chmod +x media-extraction.sh
-   ```
+Automation & Resilience
 
-2. Run it:
-   ```bash
-   bash media-extraction.sh "/path/to/downloads"
-   ```
+Settle Wait: Waits for archives to stop being modified (MIN_RAR_AGE) before extracting to prevent errors on slow disks or active downloads.
 
-By default, it will sort into:
-```
-/path/to/library
-  ├── Movies/
-  └── TV Shows/
-```
+Exponential Backoff: Retries FileBot operations up to 3 times (configurable) with increasing delays to handle API rate limits or network hiccups.
 
----
+Integrity Checks: Uses ffprobe to verify video file health before moving them into your library.
 
-## Configuration
+Disk Space Guard: Calculates required space (default 2.5x archive size) before beginning extraction to prevent "Disk Full" errors.
 
-| Variable | Default | Description |
-|-----------|----------|-------------|
-| `WATCH_DIR` | `"$1"` or `/path/to/downloads` | Folder to scan for archives (qBittorrent can pass `%D`) |
-| `DEST_ROOT` | `/path/to/library` | Root of the organized library |
-| `SEVENZ` | auto-detect | `7zz` or `7z` binary |
-| `FILEBOT` | `filebot` | FileBot CLI binary |
-| `FORCE` | `0` | `1` = re-extract & re-process all content |
-| `DRY_RUN` | `0` | `1` = log FileBot actions without writing |
-| `PROGRESS` | `0` | `1` = show extractor/FileBot progress |
-| `MAX_RETRIES` | `3` | Retry attempts for extraction/FileBot |
-| `RETRY_DELAY` | `5` | Delay (seconds) between retries |
-| `CLEANUP_EXTRACTS` | `0` | `1` = remove `.extract_tmp` folders after success |
-| `SPECIAL_CASES_FILE` | `~/.config/media-script/special-cases.conf` | Custom title name mapping file |
+Intelligence & Fallbacks
 
----
+Fuzzy Matching: Enhanced movie duplicate detection allows for minor punctuation or naming differences when checking if a movie already exists in your library.
 
-## Special Case Mapping (optional)
+Manual Fallback: If FileBot fails to identify a TV show, the script performs a manual "best-effort" placement based on folder names and common episode patterns.
 
-**File:**
-```
-~/.config/media-script/special-cases.conf
-```
+Query Hinting: Strips common release tags (HEVC, 1080p, etc.) to provide FileBot with a clean title for better metadata matching.
 
-**Format:**
-```
-pattern|replacement
-```
+Safety & Performance
 
-**Example:**
-```
-sample keyword|Desired Title (2010)
-uk version|Show Name (2001)
-us version|Show Name (2005)
-```
+Idempotency: Uses .extract_sig (MD5 signature of archive state) to skip processing unless the archives have changed.
 
----
+Parallel Processing: Processes subdirectories in parallel using xargs -P to maximize CPU/Disk throughput.
 
-## How It Detects TV vs Movies
+Concurrency Lock: A lockfile prevents multiple instances from running simultaneously, with automatic stale-lock detection.
 
-| Rule | Interpreted As |
-|------|----------------|
-| Contains `SxxEyy`, `E##`, `Ep ##` | TV |
-| Contains `Part/Pt` + Year + ≤2 files, no S/E markers | Movie |
-| ≥5 “Part” files | TV (miniseries) |
+Stale Cleanup: Automatically identifies and removes .extract_tmp folders older than 24 hours.
 
-> Note: Path-based forced matches using specific show names were removed to avoid hardcoded titles.
+Configuration
+The script loads settings from ~/.extract_and_filebot.conf. You can override any of these variables:
 
----
+Variable	Default	Description
+DEST_ROOT	/Volumes/Vault/Extracted Media	The root of your organized library.
+PARALLEL_JOBS	2	Number of concurrent extraction/sort tasks.
+STREAM_MODE	1	Start processing immediately as folders are found.
+DISK_SPACE_MARGIN	2.5	Multiplier for free space required vs archive size.
+FILEBOT_RETRY	3	Number of retry attempts for FileBot API calls.
+VERIFY_VIDEO	1	Set to 1 to use ffprobe for integrity checks.
+FORCE	0	Set to 1 to ignore signatures and re-process everything.
+QUIET	0	Set to 1 to suppress "already processed" logs.
 
-## Safety & Idempotency
+Installation Requirements
 
-- The script **never** alters or deletes the original seeding archives.
-- Extraction is done into a sibling temp directory (`.extract_tmp`).
-- Each folder gets:
-  - `.extract_sig` → archive signature  
-  - `.extract_done` → mark of completion  
-  - `.by_media_script` → ownership flag for safe cleanup
-- Re-running the script on the same content does **nothing** unless forced.
+7-Zip: brew install sevenzip (The script prefers 7zz).
 
----
+FFmpeg: brew install ffmpeg (Required for video verification).
 
-## Optional Cleanup
+FileBot: Official CLI version installed and licensed.
 
-To automatically remove extracted temp folders after successful processing:
-```bash
-CLEANUP_EXTRACTS=1 bash media-extraction.sh "/path/to/downloads"
-```
-This removes only `.extract_tmp` directories **created by the script** after success.
+Unar: brew install unar (Optional fallback extractor).
 
----
+qBittorrent Setup
 
-## Integration (qBittorrent Example)
+Open Preferences → Downloads.
 
-In **Preferences → Downloads → Run external program on torrent completion**:
-```bash
-bash /path/to/media-extraction.sh "%D"
-```
+Check Run external program on torrent completion.
 
-`%D` is the torrent’s download directory.
+Enter the command: bash "/path/to/qbittorrent_hook.sh" "%D" "%L" "%N"
 
-Optionally combine with cleanup:
-```bash
-CLEANUP_EXTRACTS=1 bash /path/to/media-extraction.sh "%D"
-```
+Logs
 
----
+Main Script Log: /tmp/extract_and_filebot.log
 
-## Logging
-
-Logs are written to:
-```
-/tmp/extract_and_filebot.log
-```
-Each entry includes timestamps and extraction/FileBot messages for troubleshooting.
-
----
-
-## Example Commands
-
-Dry run (no file changes):
-```bash
-DRY_RUN=1 PROGRESS=1 bash media-extraction.sh "/downloads"
-```
-
-Force full re-processing:
-```bash
-FORCE=1 bash media-extraction.sh "/downloads"
-```
-
-Extract, sort, and clean up temp folders:
-```bash
-CLEANUP_EXTRACTS=1 bash media-extraction.sh "/downloads"
-```
-
----
-
-## Troubleshooting
-
-- **Missing commands** → Ensure `filebot` and `7zz` are in your PATH.  
-- **FileBot mismatch** → Add an override in `special-cases.conf`.  
-- **Passworded archives** → Not supported; extract manually first.  
-- **Multiple archive sets** → Script processes one per folder; rerun for others.
-
----
+qBittorrent Hook Log: /tmp/qbittorrent_hook.log
